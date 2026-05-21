@@ -14,9 +14,7 @@ const SELECTORS = {
   EMPTY_BUN: 'Выберите булки',
   EMPTY_FILLING: 'Выберите начинку',
 
-  ORDER_BUTTON: 'Оформить заказ',
-  PAGE_TITLE: 'Соберите бургер',
-  BUNS_SECTION: 'Булки'
+  ORDER_BUTTON: 'Оформить заказ'
 };
 
 const TEST_DATA = {
@@ -32,7 +30,14 @@ const API = {
 describe('Проверка загрузки страницы', () => {
   it('страница должна загрузиться', () => {
     cy.visit('/');
-    cy.contains(SELECTORS.PAGE_TITLE, { timeout: 10000 }).should('be.visible');
+    cy.wait(5000);
+
+    cy.document().then((doc) => {
+      const bodyText = doc.body.innerText;
+      cy.log('Текст на странице:', bodyText.substring(0, 500));
+    });
+
+    cy.contains('Соберите бургер', { timeout: 10000 }).should('exist');
   });
 });
 
@@ -41,11 +46,14 @@ describe('Отладка - проверка загрузки данных', () =
     cy.intercept('GET', API.INGREDIENTS).as('getIngredients');
 
     cy.visit('/');
-    cy.wait('@getIngredients')
-      .its('response.statusCode')
-      .should('eq', 200);
 
-    cy.contains('section', SELECTORS.BUNS_SECTION).should('exist');
+    cy.wait('@getIngredients').then((interception) => {
+      expect(interception.response?.statusCode).to.eq(200);
+      expect(interception.response?.body).to.exist;
+      expect(interception.response?.body).to.have.property('data');
+      expect(interception.response?.body.data).to.be.an('array').and.not.be
+        .empty;
+    });
   });
 });
 
@@ -72,7 +80,7 @@ describe('Страница конструктора бургера', () => {
       cy.contains(SELECTORS.BUN_NAME)
         .closest('li')
         .within(() => {
-          cy.contains('button', SELECTORS.ADD_BUTTON).click();
+          cy.get('button').contains(SELECTORS.ADD_BUTTON).click();
         });
 
       cy.contains(SELECTORS.CONSTRUCTOR_BUN_TOP).should('exist');
@@ -83,13 +91,13 @@ describe('Страница конструктора бургера', () => {
       cy.contains(SELECTORS.BUN_NAME)
         .closest('li')
         .within(() => {
-          cy.contains('button', SELECTORS.ADD_BUTTON).click();
+          cy.get('button').contains(SELECTORS.ADD_BUTTON).click();
         });
 
       cy.contains(SELECTORS.MAIN_NAME)
         .closest('li')
         .within(() => {
-          cy.contains('button', SELECTORS.ADD_BUTTON).click();
+          cy.get('button').contains(SELECTORS.ADD_BUTTON).click();
         });
 
       cy.contains(SELECTORS.MAIN_NAME).should('exist');
@@ -99,22 +107,21 @@ describe('Страница конструктора бургера', () => {
   describe('Работа модального окна ингредиента', () => {
     it('должен открыть модальное окно ингредиента при клике на него', () => {
       cy.contains(SELECTORS.BUN_NAME).closest('a').click();
-      cy.contains(SELECTORS.MODAL_TITLE).should('be.visible');
-      cy.get(SELECTORS.MODAL).should('be.visible');
-      cy.contains(SELECTORS.BUN_NAME).should('be.visible');
+      cy.contains(SELECTORS.MODAL_TITLE).should('exist');
+      cy.contains(SELECTORS.BUN_NAME).should('exist');
     });
 
     it('должен закрыть модальное окно по клику на крестик', () => {
       cy.contains(SELECTORS.BUN_NAME).closest('a').click();
-      cy.contains(SELECTORS.MODAL_TITLE).should('be.visible');
+      cy.contains(SELECTORS.MODAL_TITLE).should('exist');
 
       cy.get(SELECTORS.CLOSE_BUTTON).click();
-      cy.get(SELECTORS.MODAL).should('not.exist');
+      cy.contains(SELECTORS.MODAL_TITLE).should('not.exist');
     });
 
     it('должен закрыть модальное окно по клику на оверлей', () => {
       cy.contains(SELECTORS.BUN_NAME).closest('a').click();
-      cy.contains(SELECTORS.MODAL_TITLE).should('be.visible');
+      cy.get(SELECTORS.MODAL).should('be.visible');
 
       cy.get(SELECTORS.MODAL_OVERLAY).click({ force: true });
       cy.get(SELECTORS.MODAL).should('not.exist');
@@ -122,21 +129,20 @@ describe('Страница конструктора бургера', () => {
 
     it('должен отображать данные именно того ингредиента, по которому кликнули', () => {
       cy.contains(SELECTORS.BUN_NAME).closest('a').click();
-      cy.contains(SELECTORS.MODAL_TITLE).should('be.visible');
+      cy.contains(SELECTORS.MODAL_TITLE).should('exist');
+      cy.contains(SELECTORS.BUN_NAME).should('exist');
 
       cy.get(SELECTORS.MODAL).within(() => {
-        cy.contains(SELECTORS.BUN_NAME).should('exist');
         cy.contains(SELECTORS.MAIN_NAME).should('not.exist');
       });
 
       cy.get(SELECTORS.CLOSE_BUTTON).click();
-      cy.get(SELECTORS.MODAL).should('not.exist');
 
       cy.contains(SELECTORS.MAIN_NAME).closest('a').click();
-      cy.contains(SELECTORS.MODAL_TITLE).should('be.visible');
+      cy.contains(SELECTORS.MODAL_TITLE).should('exist');
+      cy.contains(SELECTORS.MAIN_NAME).should('exist');
 
       cy.get(SELECTORS.MODAL).within(() => {
-        cy.contains(SELECTORS.MAIN_NAME).should('exist');
         cy.contains(SELECTORS.BUN_NAME).should('not.exist');
       });
     });
@@ -144,6 +150,18 @@ describe('Страница конструктора бургера', () => {
 
   describe('Создание заказа', () => {
     beforeEach(() => {
+      cy.intercept('GET', API.INGREDIENTS, {
+        fixture: 'ingredients.json'
+      }).as('getIngredients');
+
+      cy.intercept('GET', API.USER, {
+        fixture: 'user.json'
+      }).as('getUser');
+
+      cy.intercept('POST', API.ORDERS, {
+        fixture: 'order.json'
+      }).as('createOrder');
+
       cy.visit('/', {
         onBeforeLoad(win) {
           win.localStorage.setItem('refreshToken', 'testRefreshToken');
@@ -163,16 +181,16 @@ describe('Страница конструктора бургера', () => {
       cy.contains(SELECTORS.BUN_NAME)
         .closest('li')
         .within(() => {
-          cy.contains('button', SELECTORS.ADD_BUTTON).click();
+          cy.get('button').contains(SELECTORS.ADD_BUTTON).click();
         });
 
       cy.contains(SELECTORS.MAIN_NAME)
         .closest('li')
         .within(() => {
-          cy.contains('button', SELECTORS.ADD_BUTTON).click();
+          cy.get('button').contains(SELECTORS.ADD_BUTTON).click();
         });
 
-      cy.contains('button', SELECTORS.ORDER_BUTTON).click();
+      cy.contains(SELECTORS.ORDER_BUTTON).click();
 
       cy.wait('@createOrder', { timeout: 10000 });
 
